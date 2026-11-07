@@ -1,0 +1,1 @@
+export const CONSENT_TEXT = 'I agree to receive automated messages from OnTrack Grades about my family’s schoolwork (daily summaries, assignment questions, reminders and reply recaps). I can change or withdraw this at any time in Notification settings. Messages are never used for advertising.';

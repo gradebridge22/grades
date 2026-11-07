@@ -1,0 +1,15 @@
+body{width:320px;margin:0;padding:14px 16px 16px;background:#fbf8f1;color:#1f2430;font:14px/1.4 "Work Sans",system-ui,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;border-bottom:1.5px solid #1f2430;padding-bottom:8px;margin-bottom:10px}
+.logo{font:700 17px Georgia,serif}.logo b{color:#2d5da8}
+.tag{font-size:10px;text-transform:uppercase;letter-spacing:.08em;border:1px solid #ddd6c6;border-radius:3px;padding:1px 5px;color:#5c6270}
+h1{font:700 18px Georgia,serif;margin:4px 0 6px}
+label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#5c6270;margin:10px 0 0}
+input{display:block;width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;border:1.5px solid #ddd6c6;border-radius:4px;font:15px system-ui;background:#fff;color:#1f2430}
+button{min-height:40px;margin-top:10px;width:100%;border:1.5px solid #1f2430;border-radius:4px;background:#fff;font:600 14px system-ui;color:#1f2430;cursor:pointer}
+button.primary{background:#1f2430;color:#fbf8f1}
+button.link{border:0;background:none;color:#5c6270;font-weight:400;text-decoration:underline;min-height:auto}
+.muted{color:#5c6270;font-size:13px}
+ul{padding-left:18px;margin:8px 0}.warn{color:#9a4a1e;font-size:12px}
+details{margin-top:12px;font-size:13px}summary{cursor:pointer;color:#2d5da8}
+#status{min-height:18px;font-size:13px;margin:10px 0 0}
+#status.err{color:#a3332a}#status.ok{color:#2f6b45}

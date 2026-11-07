@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OnTrack Grades Sync</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<header><span class="logo">OnTrack <b>Grades</b></span><span class="tag">prototype</span></header>
+
+<section id="pair" hidden>
+  <h1>Pair this browser</h1>
+  <p>In OnTrack Grades, open <em>Connections → Browser extension</em> and get a pairing code.</p>
+  <label>OnTrack Grades address<input id="appUrl" type="url" value="http://localhost:3000" required></label>
+  <label>Pairing code<input id="code" autocomplete="off" placeholder="ABCD-EFGH" required></label>
+  <button id="pairBtn" class="primary">Pair</button>
+</section>
+
+<section id="sync" hidden>
+  <h1 id="who"></h1>
+  <p class="muted">Sign in to <span id="sys"></span> yourself in this tab, open the grades page, then press Read.</p>
+  <button id="readBtn" class="primary">Read this page</button>
+  <div id="preview" hidden>
+    <ul id="counts"></ul>
+    <ul id="warn" class="warn"></ul>
+    <p class="muted">Only the items counted above are sent. Nothing else from the page, and never your password.</p>
+    <button id="sendBtn" class="primary">Send to OnTrack Grades</button>
+  </div>
+  <details><summary>Page not recognised?</summary>
+    <p class="muted">Copy a privacy-safe outline of this page (structure only; names, grades and text are removed) and send it to your developer to tune the reader.</p>
+    <button id="outlineBtn">Copy page outline</button>
+  </details>
+  <button id="unpair" class="link">Unpair this browser</button>
+</section>
+
+<p id="status" role="status"></p>
+<script type="module" src="popup.js"></script>
+</body>
+</html>

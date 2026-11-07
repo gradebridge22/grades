@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "OnTrack Grades Sync (prototype)",
+  "version": "0.1.0",
+  "description": "Reads the Canvas or Skyward Family Access page YOU are signed in to, and sends grades/assignments to your OnTrack Grades family. Never sees your password.",
+  "action": { "default_popup": "popup.html", "default_title": "OnTrack Grades Sync" },
+  "permissions": ["storage", "activeTab", "scripting"],
+  "minimum_chrome_version": "116"
+}
