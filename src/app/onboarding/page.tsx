@@ -46,7 +46,9 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
       </Card>
       {me.role !== 'student' && (
         <Card title="Invite a parent, guardian or student">
-          {sp.invited && <p className="mb-3 rounded-lg bg-brand-soft p-2 text-sm text-brand">Invite sent to {sp.invited}.{sp.link && <><br /><span className="break-all text-xs">Demo link (normally only emailed): {sp.link}</span></>}</p>}
+          {sp.invited && (sp.unsent
+            ? <p className="mb-3 rounded-lg bg-amber-50 p-2 text-sm text-amber-800">We couldn&apos;t email {sp.invited} yet. Send them this invite link yourself (text or email). It works once and expires in 7 days:<br /><span className="break-all text-xs font-mono select-all">{sp.link}</span></p>
+            : <p className="mb-3 rounded-lg bg-brand-soft p-2 text-sm text-brand">Invite sent to {sp.invited}.{sp.link && <><br /><span className="break-all text-xs">Demo link (normally only emailed): {sp.link}</span></>}</p>)}
           <form action={inviteMember} className="grid gap-3 sm:grid-cols-2">
             <label className="sm:col-span-2"><span className="label">Email</span><input name="email" type="email" required className="input" /></label>
             <label><span className="label">Role</span><select name="role" className="input"><option value="guardian">Guardian</option><option value="parent">Parent</option><option value="student">Student</option></select></label>
