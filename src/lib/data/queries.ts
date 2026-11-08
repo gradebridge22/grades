@@ -19,6 +19,7 @@ export function mapAssignment(r: Row): Assignment {
     submissionStatus: r.submission_status, submittedAt: d(r.submitted_at), gradedAt: d(r.graded_at), plannerChecked: !!r.planner_checked,
     attemptsUsed: r.attempts_used, attemptsAllowed: r.attempts_allowed, attemptsUnlimited: !!r.attempts_unlimited,
     retakeStatus: r.retake_status, retakeClosesAt: d(r.retake_closes_at), retakeNote: r.retake_note, retakeVerifiedAt: d(r.retake_verified_at),
+    groupName: r.group_name ?? null, groupWeight: n(r.group_weight),
   };
 }
 export const mapReply = (r: Row): Reply => ({ id: r.id, assignmentId: r.assignment_id, status: r.status, note: r.note, channel: r.channel, createdAt: new Date(r.created_at) });
