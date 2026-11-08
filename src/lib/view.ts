@@ -1,5 +1,5 @@
 import type { ChildData } from './data/queries';
-import { classify, teacherFollowUps, latestReply, type Bucket, type FollowUpRule } from './domain/assignments';
+import { classify, teacherFollowUps, latestReply, isFromPreviousYear, scorePct, LOW_SCORE_THRESHOLD, type Bucket, type FollowUpRule } from './domain/assignments';
 import { retakeOpportunities } from './domain/retakes';
 import { improvementsFromHistory } from './domain/encouragement';
 import { freshness, type Freshness } from './domain/sync';
@@ -7,11 +7,29 @@ import type { FamilyCalendar, Assignment } from './domain/types';
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-export function fmtDate(d: Date | string | null | undefined, tz: string, withTime = false) {
+export function fmtDate(d: Date | string | null | undefined, tz: string, withTime = false, now = new Date()) {
   if (!d) return '—';
   const dt = typeof d === 'string' ? new Date(d) : d;
-  return dt.toLocaleString('en-US', { timeZone: tz, month: 'short', day: 'numeric', ...(withTime ? { hour: 'numeric', minute: '2-digit' } : {}) });
+  const showYear = Math.abs(dt.getTime() - now.getTime()) > 200 * 86400_000; // avoid "Jan 20" meaning last January
+  return dt.toLocaleString('en-US', { timeZone: tz, month: 'short', day: 'numeric', ...(showYear ? { year: 'numeric' } : {}), ...(withTime ? { hour: 'numeric', minute: '2-digit' } : {}) });
 }
+
+/** "3 days late", "due tomorrow", "due in 4 days" — calendar days in the family timezone. */
+export function dueRelative(a: { dueAt: Date | null }, tz: string, now = new Date()): string | null {
+  if (!a.dueAt) return null;
+  const day = (d: Date) => new Date(d.toLocaleDateString('en-CA', { timeZone: tz }) + 'T00:00:00Z').getTime();
+  const diff = Math.round((day(a.dueAt) - day(now)) / 86400_000);
+  if (diff === 0) return 'due today';
+  if (diff === 1) return 'due tomorrow';
+  if (diff > 1) return `due in ${diff} days`;
+  return diff === -1 ? '1 day late' : `${-diff} days late`;
+}
+
+/** Whole-number percent, e.g. 73.3333 → 73. */
+export const pct0 = (p: number | null | undefined) => (p == null ? null : Math.round(p * 100));
+
+/** Work done on paper/in class that the online gradebook can't see as "submitted". */
+export const isOnPaper = (title: string) => /\b(on paper|paper copy|in class|hand ?written)\b/i.test(title);
 export function relTime(d: Date | string | null, now = new Date()) {
   if (!d) return 'never';
   const ms = now.getTime() - new Date(d).getTime();
@@ -34,7 +52,7 @@ export function connectionFreshness(c: Row, now = new Date()): Freshness {
 export function summarize(cd: ChildData, cal: FamilyCalendar, rule: FollowUpRule, now = new Date()) {
   const inScope = (a: Assignment) => !cd.scope.excluded.has(a.id);
   const current = cd.scope.current;
-  const isCurrent = (a: Assignment) => !current || a.periodId == null || a.periodId === current.id || cd.scope.included.has(a.id);
+  const isCurrent = (a: Assignment) => !isFromPreviousYear(a, cd.scope) && (!current || a.periodId == null || a.periodId === current.id || cd.scope.included.has(a.id));
   const buckets: Record<Bucket, Assignment[]> = { upcoming: [], overdue: [], missing: [], submitted_ungraded: [], low_score: [], graded: [], excused: [], no_date: [] };
   const previous: Assignment[] = [];
   for (const a of cd.assignments) {
@@ -48,8 +66,48 @@ export function summarize(cd: ChildData, cal: FamilyCalendar, rule: FollowUpRule
   const series = groupHistory(cd).map((s) => ({ course: courseName.get(s.courseId) ?? 'Course', points: s.points }));
   const improvements = improvementsFromHistory(series);
   const stale = cd.connections.filter((c: Row) => ['reconnect_needed', 'error'].includes(c.status));
-  return { buckets, previous, followUps, retakes, improvements, stale, latest: (id: string) => latestReply(cd.replies, id) };
+  const week = now.getTime() + 7 * 86400_000;
+  const dueThisWeek = buckets.upcoming.filter((a) => a.dueAt && a.dueAt.getTime() <= week);
+  const lowScores = buckets.low_score.slice().sort((a, b) => (scorePct(a) ?? 0) - (scorePct(b) ?? 0));
+  const courses = courseSummaries(cd, buckets, dueThisWeek, now);
+  const lowest = courses.filter((c) => c.score != null).sort((a, b) => a.score! - b.score!)[0] ?? null;
+  return { buckets, previous, followUps, retakes, improvements, stale, dueThisWeek, lowScores, courses, lowest,
+    latest: (id: string) => latestReply(cd.replies, id) };
 }
+
+export interface CourseSummary {
+  id: string; name: string; shortName: string; teacher: string | null;
+  /** The school platform's own running course grade (weighted by its categories). */
+  score: number | null; scoreSource: 'platform' | 'assignments' | null;
+  pastDue: number; dueThisWeek: number; awaiting: number; lowScores: number; graded: number;
+}
+
+/** Per-course rollup for the current school year. Never invents a grade: falls back to raw points only when labeled as such. */
+export function courseSummaries(cd: ChildData, buckets: Record<Bucket, Assignment[]>, dueThisWeek: Assignment[], now = new Date()): CourseSummary[] {
+  void now;
+  const count = (list: Assignment[], id: string) => list.filter((a) => a.courseId === id).length;
+  return cd.courses.map((c: Row) => {
+    const mine = (b: Bucket) => buckets[b].filter((a) => a.courseId === c.id);
+    const scored = [...mine('graded'), ...mine('low_score')].filter((a) => a.pointsPossible);
+    const pts = scored.reduce((s, a) => s + (a.score ?? 0), 0), possible = scored.reduce((s, a) => s + (a.pointsPossible ?? 0), 0);
+    const platform = c.current_score == null ? null : Number(c.current_score);
+    return {
+      id: c.id, name: c.name, shortName: shortCourse(c.name), teacher: c.teacher ?? null,
+      score: platform ?? (possible > 0 ? Math.round((pts / possible) * 1000) / 10 : null),
+      scoreSource: platform != null ? 'platform' as const : possible > 0 ? 'assignments' as const : null,
+      pastDue: count(buckets.overdue, c.id) + count(buckets.missing, c.id), dueThisWeek: count(dueThisWeek, c.id),
+      awaiting: count(buckets.submitted_ungraded, c.id), lowScores: count(buckets.low_score, c.id), graded: scored.length,
+    };
+  }).filter((c) => c.graded + c.pastDue + c.dueThisWeek + c.awaiting > 0 || c.score != null)
+    .sort((a, b) => b.pastDue - a.pastDue || (a.score ?? 101) - (b.score ?? 101));
+}
+
+/** "M/J Language Arts 3, Advanced - Rodriguez - p01 - s03" → "M/J Language Arts 3, Advanced". */
+export function shortCourse(name: string): string {
+  return name.split(' - ')[0].replace(/\s*\(\d{4}-\d{2,4}\)$/, '').trim() || name;
+}
+
+export { LOW_SCORE_THRESHOLD };
 
 function groupHistory(cd: ChildData) {
   const m = new Map<string, { courseId: string; points: { percent: number | null; at: Date }[] }>();
