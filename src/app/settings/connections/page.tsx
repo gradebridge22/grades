@@ -4,6 +4,7 @@ import { listChildren } from '@/lib/data/queries';
 import { connectionFreshness, relTime } from '@/lib/view';
 import { FRESHNESS_LABEL } from '@/lib/domain/sync';
 import { ASSIGNMENT_TEMPLATE, GRADE_TEMPLATE } from '@/lib/domain/csv';
+import { SubmitButton } from '@/components/SubmitButton';
 import { importCsv, connectCanvas, syncNow, createPairingCode, revokeExtension } from '@/app/actions';
 import { Badge, Card, PageHeader, StatusLabel } from '@/components/ui';
 
@@ -39,7 +40,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge tone={f === 'current' || ['csv', 'manual'].includes(c.provider) ? 'good' : f === 'not_connected' ? 'muted' : 'warn'}>{c.status === 'pending_district' ? 'Waiting for district API' : ['csv', 'manual'].includes(c.provider) ? `Manual import · ${relTime(c.last_success_at)}` : FRESHNESS_LABEL[f]}</Badge>
-                  {c.provider === 'canvas' && <form action={syncNow}><input type="hidden" name="connectionId" value={c.id} /><button className="btn-ghost">{c.status === 'reconnect_needed' ? 'Retry' : 'Sync now'}</button></form>}
+                  {c.provider === 'canvas' && <form action={syncNow}><input type="hidden" name="connectionId" value={c.id} /><SubmitButton className="btn-ghost" pending="Syncing… (up to a minute)">{c.status === 'reconnect_needed' ? 'Retry' : 'Sync now'}</SubmitButton></form>}
                 </div>
               </li>
             );
@@ -81,7 +82,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
           <label><span className="label">File type</span><select name="kind" className="input"><option value="grades">Grades</option><option value="assignments">Assignments</option></select></label>
           <label><span className="label">CSV file</span><input type="file" name="file" accept=".csv,text/csv" className="input" /></label>
           <label className="sm:col-span-3"><span className="label">…or paste CSV</span><textarea name="text" className="input h-24 font-mono text-xs" /></label>
-          <button className="btn-primary w-fit">Import</button>
+          <SubmitButton className="btn-primary w-fit" pending="Importing…">Import</SubmitButton>
         </form>
         <details className="mt-3 text-xs"><summary className="cursor-pointer text-link">Templates (tip: export from Skyward Family Access, then match these columns)</summary>
           <pre className="mt-2 overflow-x-auto rounded bg-[#f3eee2] p-2">{GRADE_TEMPLATE}</pre>
@@ -98,7 +99,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
             <label><span className="label">Canvas URL</span><input name="baseUrl" placeholder="https://yourdistrict.instructure.com" className="input" required /></label>
             <label><span className="label">Student&apos;s Canvas user ID (from observer view)</span><input name="studentCanvasId" inputMode="numeric" className="input" required /></label>
             <label><span className="label">Observer access token</span><input name="token" type="password" autoComplete="off" className="input" required /></label>
-            <button className="btn-primary w-fit">Connect (token is encrypted server-side)</button>
+            <SubmitButton className="btn-primary w-fit" pending="Connecting and syncing… (up to a minute)">Connect (token is encrypted server-side)</SubmitButton>
           </form>
         ) : <p className="mt-2 text-xs text-warn">Set TOKEN_ENCRYPTION_KEY on the server to enable connecting Canvas.</p>}
       </Card>
