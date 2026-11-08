@@ -5,7 +5,7 @@
 import type { Db, Q } from './engine';
 import type { Assignment, GradingPeriod, Reply, FamilyCalendar, ReplyStatus } from '../domain/types';
 import type { Scope } from '../domain/assignments';
-import { currentPeriod } from '../domain/assignments';
+import { currentPeriod, schoolYearStart } from '../domain/assignments';
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const d = (v: unknown) => (v == null ? null : new Date(v as string));
@@ -67,6 +67,7 @@ export async function loadChildData(q: Q, childId: string, tz: string, now = new
     excluded: new Set(excl.map((e) => e.assignment_id)),
     included: new Set(incl.map((i) => i.assignment_id)),
     current: currentPeriod(periods, now, tz),
+    yearStart: schoolYearStart(now, periods),
   };
   return { child, periods, courses, assignments, replies, exclusions: excl, scope, grades, history, connections };
 }
