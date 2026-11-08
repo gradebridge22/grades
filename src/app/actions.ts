@@ -10,7 +10,7 @@ import { isReplyStatus } from '@/lib/domain/replyTokens';
 import { parseTyped, gradeRow, assignmentRow } from '@/lib/domain/csv';
 import { encryptSecret, decryptSecret } from '@/lib/crypto';
 import { canvasAdapter } from '@/lib/integrations/canvas';
-import { normalizeCanvas, syncConnection } from '@/lib/integrations/syncService';
+import { normalizeCanvas, syncConnection, canvasCourseScores } from '@/lib/integrations/syncService';
 import { defaultEmailProvider } from '@/lib/notifications/email';
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -266,9 +266,15 @@ export async function connectCanvas(f: FormData) {
   const token = z.string().min(20).max(400).parse(s(f, 'token'));
   const studentId = z.coerce.number().int().positive().parse(s(f, 'studentCanvasId'));
   const db = await getDb();
-  const [conn] = await db.asUser(me.userId, (q) => q<Row>(`insert into integration_connections(family_id, child_id, provider, status, display_name, base_url)
-      values ($1,$2,'canvas','not_configured',$3,$4) returning id`, [me.familyId, childId, `Canvas (${new URL(baseUrl).host})`, `${baseUrl}#student=${studentId}`]));
-  await db.asService((q) => q(`insert into integration_secrets(connection_id, family_id, ciphertext) values ($1,$2,$3)`, [conn.id, me.familyId, encryptSecret(token)]));
+  const url = `${new URL(baseUrl).origin}#student=${studentId}`;
+  // Reconnecting the same Canvas account replaces its token instead of creating a duplicate connection.
+  const [existing] = await db.asUser(me.userId, (q) => q<Row>(`select id from integration_connections where child_id = $1 and provider = 'canvas' and base_url = $2 limit 1`, [childId, url]));
+  const conn = existing ?? (await db.asUser(me.userId, (q) => q<Row>(`insert into integration_connections(family_id, child_id, provider, status, display_name, base_url)
+      values ($1,$2,'canvas','not_configured',$3,$4) returning id`, [me.familyId, childId, `Canvas (${new URL(baseUrl).host})`, url])))[0];
+  await db.asService(async (q) => {
+    await q(`delete from integration_secrets where connection_id = $1`, [conn.id]);
+    await q(`insert into integration_secrets(connection_id, family_id, ciphertext) values ($1,$2,$3)`, [conn.id, me.familyId, encryptSecret(token)]);
+  });
   await runConnectionSync(conn.id, me.familyId);
   redirect('/settings/connections?connected=1');
 }
@@ -296,7 +302,7 @@ async function runConnectionSync(connectionId: string, familyId: string) {
     return;
   }
   const adapter = canvasAdapter({ baseUrl: base, token: decryptSecret(row.ciphertext), studentCanvasId: Number(frag), childName: row.child_name });
-  await syncConnection(db, connectionId, adapter, normalizeCanvas);
+  await syncConnection(db, connectionId, adapter, normalizeCanvas, new Date(), canvasCourseScores);
 }
 
 export async function acceptInvite(f: FormData) {
