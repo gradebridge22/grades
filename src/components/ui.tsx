@@ -36,16 +36,21 @@ export function PageHeader({ title, sub, back, eyebrow }: { title: string; sub?:
 }
 
 const STAT_COLOR: Record<Tone, string> = { neutral: 'text-ink', good: 'text-good', warn: 'text-warn', bad: 'text-bad', info: 'text-link', muted: 'text-muted' };
+void STAT_COLOR;
+const STAT_TILE: Record<Tone, string> = {
+  neutral: 'bg-[#f1f0ec] text-[#22221f]', good: 'bg-[#ddf5e4] text-[#1f6b3a]', warn: 'bg-[#ffe7d6] text-[#8a4315]',
+  bad: 'bg-[#ffdcdc] text-[#9a2323]', info: 'bg-[#eaf2ff] text-[#1c4fa0]', muted: 'bg-[#f1f0ec] text-[#55554f]',
+};
 /** KPI cards. */
 export function Tally({ items }: { items: { label: string; value: ReactNode; tone?: Tone; href?: string; sub?: string }[] }) {
   return (
     <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
       {items.map((it) => {
         const body = (
-          <div className={`flex h-full flex-col gap-1 rounded-[10px] border border-line bg-white px-4 py-3 ${it.href ? 'transition hover:border-[#c9c9c4]' : ''}`}>
-            <span className="text-xs font-medium text-muted">{it.label}</span>
-            <span className={`text-[28px] font-semibold leading-none tracking-[-0.02em] ${STAT_COLOR[it.tone ?? 'neutral']}`}>{it.value}</span>
-            {it.sub && <span className="text-xs text-muted">{it.sub}</span>}
+          <div className={`flex h-full flex-col gap-1 rounded-[22px] px-[18px] py-4 ${STAT_TILE[it.tone ?? 'neutral']} ${it.href ? 'transition hover:-translate-y-0.5 hover:shadow-[0_6px_18px_-10px_rgba(0,0,0,0.35)]' : ''}`}>
+            <span className="text-[34px] font-extrabold leading-none tracking-[-0.02em]">{it.value}</span>
+            <span className="text-sm font-semibold">{it.label}{it.href ? <span aria-hidden> →</span> : null}</span>
+            {it.sub && <span className="text-xs opacity-80">{it.sub}</span>}
           </div>
         );
         return it.href ? <Link key={it.label} href={it.href}>{body}</Link> : <div key={it.label}>{body}</div>;

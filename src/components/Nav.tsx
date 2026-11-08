@@ -13,10 +13,10 @@ function useActive() {
 export function Sidebar({ role, kids }: { role: 'parent' | 'guardian' | 'student'; kids: Kid[] }) {
   const active = useActive();
   const item = (href: string, label: string) => (
-    <Link key={href} href={href} className={`flex min-h-9 items-center rounded-md px-2.5 text-sm ${active(href) ? 'bg-[#e9e9e5] font-semibold text-ink' : 'text-[#4a4f57] hover:bg-[#ececE8]'}`}>{label}</Link>
+    <Link key={href} href={href} className={`flex min-h-10 items-center rounded-full px-3.5 text-sm ${active(href) ? 'bg-white font-semibold text-ink shadow-[0_1px_0_#ebe6da]' : 'text-[#4a4f57] hover:bg-[#efebe0]'}`}>{label}</Link>
   );
   const section = (label: string) => <span className="px-2.5 pb-1 pt-4 text-[11px] font-medium uppercase tracking-[0.06em] text-muted">{label}</span>;
-  if (role === 'student') return <nav aria-label="Main" className="flex flex-col gap-0.5">{item('/student', 'My work')}{item('/settings/notifications', 'Notifications')}</nav>;
+  if (role === 'student') return <nav aria-label="Main" className="flex flex-col gap-0.5">{item('/student', 'My work')}{item('/settings/notifications', 'Notifications')}{item('/settings/view', 'Customize view')}</nav>;
   return (
     <nav aria-label="Main" className="flex flex-col gap-0.5">
       {item('/parent', 'Overview')}
@@ -24,7 +24,7 @@ export function Sidebar({ role, kids }: { role: 'parent' | 'guardian' | 'student
       {kids.map((k) => item(`/child/${k.id}`, k.name))}
       {section('Family')}
       {item('/follow-up', 'Teacher follow-up')}{item('/explore', 'Explore')}{item('/settings/notifications', 'Notifications')}
-      {item('/settings/connections', 'Connections')}{item('/settings/privacy', 'Privacy')}
+      {item('/settings/connections', 'Connections')}{item('/settings/view', 'Customize view')}{item('/settings/privacy', 'Privacy')}
     </nav>
   );
 }

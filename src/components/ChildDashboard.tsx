@@ -10,12 +10,15 @@ import { ReplyButtons } from './ReplyButtons';
 import { sendCheer } from '@/app/actions';
 import { courseColor } from '@/lib/courseColor';
 import type { FollowUpRule } from '@/lib/domain/assignments';
+import { getViewPrefs } from '@/lib/viewPrefs.server';
+import { letterFor, type SectionId } from '@/lib/viewPrefs';
 
 const gradeTone = (p: number | null) => (p == null ? 'text-muted' : p < 70 ? 'text-bad' : p < 80 ? 'text-warn' : 'text-good');
 const byUrgency = (a: Assignment, b: Assignment) =>
   (a.closesAt?.getTime() ?? Infinity) - (b.closesAt?.getTime() ?? Infinity) || (b.dueAt?.getTime() ?? 0) - (a.dueAt?.getTime() ?? 0);
 
-export function ChildDashboard({ cd, me, rule, asStudent }: { cd: ChildData; me: Me; rule: FollowUpRule; asStudent: boolean }) {
+export async function ChildDashboard({ cd, me, rule, asStudent }: { cd: ChildData; me: Me; rule: FollowUpRule; asStudent: boolean }) {
+  const view = await getViewPrefs();
   const now = new Date();
   const s = summarize(cd, me.calendar, rule, now);
   const tz = me.calendar.timezone;
@@ -37,66 +40,84 @@ export function ChildDashboard({ cd, me, rule, asStudent }: { cd: ChildData; me:
       </Card>))
     : <Card><ul>{list.map((a) => row(a))}</ul></Card>;
 
+  const work = (f: string) => `/child/${childId}/work?f=${f}`;
+  const sections: Record<SectionId, React.ReactNode> = {
+    pastDue: (
+      <section key="pastDue" className="grid gap-3">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-[22px] font-extrabold">{asStudent ? 'Can you still turn these in?' : 'Past due — can still be turned in'} <span className="text-muted">({canStillTurnIn.length})</span></h2>
+          {canStillTurnIn.length > 0 && <Link href={work('open')} className="text-sm font-semibold text-link">See list</Link>}
+        </div>
+        {canStillTurnIn.length === 0 ? <Empty>Nothing past due that&apos;s still open. 🎉</Empty> : withReplies(canStillTurnIn)}
+      </section>
+    ),
+    dueWeek: (
+      <Card key="dueWeek" title={<>Due this week <span className="text-muted">({s.dueThisWeek.length})</span></>}
+        action={<Link href={work('week')} className="text-sm font-semibold text-link">See list</Link>}>
+        {s.dueThisWeek.length === 0 ? <Empty>Nothing due in the next 7 days.</Empty> : <ul>{s.dueThisWeek.map((a) => row(a))}</ul>}
+      </Card>
+    ),
+    closed: closedMissing.length > 0 ? (
+      <details key="closed" className="notebook-card p-4 sm:p-5" open={closedMissing.length <= 5}>
+        <summary className="cursor-pointer text-[17px] font-bold">
+          Missing — submission window closed <span className="text-muted">({closedMissing.length})</span>
+        </summary>
+        <p className="mt-1 text-xs text-muted">These can&apos;t be turned in online anymore. Worth asking the teacher about late credit or make-up work.</p>
+        {asStudent ? <div className="mt-3 grid gap-3">{withReplies(closedMissing)}</div> : <ul className="mt-2">{closedMissing.map((a) => row(a))}</ul>}
+      </details>
+    ) : null,
+    lowScores: (s.lowScores.length > 0 || confirmedRetakes.length > 0) ? (
+      <Card key="lowScores" title={<>Low scores this year <span className="text-muted">({s.lowScores.length})</span></>}
+        action={<Link href={work('low')} className="text-sm font-semibold text-link">See all</Link>}>
+        <p className="mb-1 text-xs text-muted">Graded under 70%. Lowest first. Ask about corrections or retakes where the teacher allows them.</p>
+        <ul>
+          {confirmedRetakes.map((r) => row(r.assignment, <Badge tone="good">{RETAKE_LABELS[r.view]}</Badge>))}
+          {s.lowScores.filter((a) => !confirmedRetakes.some((r) => r.assignment.id === a.id)).slice(0, 6).map((a) => row(a))}
+        </ul>
+      </Card>
+    ) : null,
+    saidDone: saidDone.length > 0 ? (
+      <Card key="saidDone" title={<>Says it&apos;s done — not graded yet <span className="text-muted">({saidDone.length})</span></>}>
+        <ul>{saidDone.map((a) => row(a))}</ul>
+      </Card>
+    ) : null,
+    cheer: !asStudent ? (
+      <div key="cheer" className="rounded-[22px] bg-brand p-5 text-white">
+        <div className="text-xl font-extrabold leading-tight">{s.improvements[0] ? praise(s.improvements[0], childId) : 'Effort counts. Tell them you noticed.'}</div>
+        <form action={sendCheer} className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <input type="hidden" name="childId" value={childId} />
+          <label className="sr-only" htmlFor="cheer">Message</label>
+          <input id="cheer" name="message" className="input !rounded-full !border-0" maxLength={200} required defaultValue="Proud of the effort you're putting in this week!" />
+          <button className="inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full bg-white px-5 text-sm font-bold text-ink">Send a cheer</button>
+        </form>
+      </div>
+    ) : null,
+  };
+
   return (
     <div className="grid gap-6">
-      <Praise>{s.improvements[0] ? praise(s.improvements[0], childId + now.toDateString()) : nudge(childId + now.toDateString())}</Praise>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Praise className="flex-1">{s.improvements[0] ? praise(s.improvements[0], childId + now.toDateString()) : nudge(childId + now.toDateString())}</Praise>
+        <Link href={`/settings/view?back=${encodeURIComponent(asStudent ? '/student' : `/child/${childId}`)}`} className="btn-ghost">Customize view</Link>
+      </div>
       {s.stale.length > 0 && <Stamp>Some school data couldn&apos;t refresh. What you see may be out of date. <Link className="underline" href="/settings/connections">Check connections</Link></Stamp>}
 
       <Tally items={[
-        { label: 'Past due', value: pastDue, tone: pastDue ? 'warn' : 'good', sub: canStillTurnIn.length ? `${canStillTurnIn.length} can still be turned in` : 'nothing still open' },
-        { label: 'Due this week', value: s.dueThisWeek.length, tone: 'info', sub: 'next 7 days' },
-        { label: 'Waiting for a grade', value: s.buckets.submitted_ungraded.length, sub: 'turned in' },
-        s.lowest
-          ? { label: 'Needs most help', value: <span className={gradeTone(s.lowest.score)}>{Math.round(s.lowest.score!)}%</span>, sub: s.lowest.shortName }
-          : { label: 'Low scores', value: s.lowScores.length, tone: s.lowScores.length ? 'warn' : 'good', sub: 'under 70% this year' },
+        { label: 'past due', value: pastDue, tone: pastDue ? 'warn' : 'good', sub: canStillTurnIn.length ? `${canStillTurnIn.length} can still be turned in` : 'nothing still open', href: work('open') },
+        { label: 'due this week', value: s.dueThisWeek.length, tone: 'info', sub: 'next 7 days', href: work('week') },
+        { label: 'waiting for a grade', value: s.buckets.submitted_ungraded.length, tone: 'neutral', sub: 'turned in', href: work('waiting') },
+        { label: 'missing · closed', value: closedMissing.length, tone: closedMissing.length ? 'bad' : 'good', sub: 'ask about late credit', href: work('closed') },
+        { label: 'under 70%', value: s.lowScores.length, tone: s.lowScores.length ? 'bad' : 'good', sub: 'this school year', href: work('low') },
       ]} />
 
-      {s.courses.length > 0 && <CourseTable courses={s.courses} childId={childId} />}
+      {s.courses.length > 0 && (view.courses === 'tiles'
+        ? <CourseTiles courses={s.courses} childId={childId} />
+        : <CourseTable courses={s.courses} childId={childId} />)}
 
-      <section className="grid gap-3">
-        <h2 className="text-[15px] font-semibold">
-          {asStudent ? 'Can you still turn these in?' : 'Past due — can still be turned in'} <span className="text-muted">({canStillTurnIn.length})</span>
-        </h2>
-        {canStillTurnIn.length === 0 ? <Empty>Nothing past due that&apos;s still open. 🎉</Empty> : withReplies(canStillTurnIn)}
-      </section>
-
-      <Card title={<>Due this week <span className="text-muted">({s.dueThisWeek.length})</span></>}
-        action={<Link href={`/child/${childId}/assignments`} className="text-sm font-medium text-link">All work</Link>}>
-        {s.dueThisWeek.length === 0 ? <Empty>Nothing due in the next 7 days.</Empty> : <ul>{s.dueThisWeek.map((a) => row(a))}</ul>}
-      </Card>
-
-      {closedMissing.length > 0 && (
-        <details className="notebook-card p-4 sm:p-5" open={closedMissing.length <= 5}>
-          <summary className="cursor-pointer text-[15px] font-semibold">
-            Missing — submission window closed <span className="text-muted">({closedMissing.length})</span>
-          </summary>
-          <p className="mt-1 text-xs text-muted">These can&apos;t be turned in online anymore. Worth asking the teacher about late credit or make-up work.</p>
-          {asStudent ? <div className="mt-3 grid gap-3">{withReplies(closedMissing)}</div> : <ul className="mt-2">{closedMissing.map((a) => row(a))}</ul>}
-        </details>
-      )}
-
-      {(s.lowScores.length > 0 || confirmedRetakes.length > 0) && (
-        <Card title={<>Low scores this year <span className="text-muted">({s.lowScores.length})</span></>}>
-          <p className="mb-1 text-xs text-muted">Graded under 70%. Lowest first. Ask about corrections or retakes where the teacher allows them.</p>
-          <ul>
-            {confirmedRetakes.map((r) => row(r.assignment, <Badge tone="good">{RETAKE_LABELS[r.view]}</Badge>))}
-            {s.lowScores.filter((a) => !confirmedRetakes.some((r) => r.assignment.id === a.id)).slice(0, 8).map((a) => row(a))}
-          </ul>
-          {s.lowScores.length > 8 && (
-            <details className="mt-2"><summary className="cursor-pointer text-sm text-link">Show {s.lowScores.length - 8} more</summary>
-              <ul>{s.lowScores.slice(8).map((a) => row(a))}</ul></details>
-          )}
-        </Card>
-      )}
-
-      {saidDone.length > 0 && (
-        <Card title={<>Says it&apos;s done — not graded yet <span className="text-muted">({saidDone.length})</span></>}>
-          <ul>{saidDone.map((a) => row(a))}</ul>
-        </Card>
-      )}
+      {view.order.map((id) => sections[id])}
 
       {s.previous.length > 0 && (
-        <details className="rounded-[10px] border border-dashed border-line p-4 text-sm">
+        <details className="rounded-[20px] border border-dashed border-line p-4 text-sm">
           <summary className="cursor-pointer font-medium text-muted">
             Hidden: {s.previous.length} item{s.previous.length === 1 ? '' : 's'} from before this school year or an earlier grading period
           </summary>
@@ -104,19 +125,40 @@ export function ChildDashboard({ cd, me, rule, asStudent }: { cd: ChildData; me:
           <ul className="mt-2">{s.previous.map((a) => <AssignmentRow key={a.id} a={a} tz={tz} now={now} />)}</ul>
         </details>
       )}
-
-      {!asStudent && (
-        <Card title="Send a cheer">
-          <form action={sendCheer} className="flex flex-col gap-2 sm:flex-row">
-            <input type="hidden" name="childId" value={childId} />
-            <label className="sr-only" htmlFor="cheer">Message</label>
-            <input id="cheer" name="message" className="input" maxLength={200} required defaultValue="Proud of the effort you're putting in this week!" />
-            <button className="btn-primary whitespace-nowrap">Send in-app</button>
-          </form>
-          <p className="mt-2 text-xs text-muted">Positive notes only. They show up on the student&apos;s page.</p>
-        </Card>
-      )}
     </div>
+  );
+}
+
+const tint = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, white)`;
+const shade = (c: string) => `color-mix(in srgb, ${c} 75%, black)`;
+
+function CourseTiles({ courses, childId }: { courses: CourseSummary[]; childId: string }) {
+  return (
+    <section className="grid gap-3">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-[22px] font-extrabold">Courses</h2>
+        <span className="text-xs text-muted">Tap a course for its full gradebook</span>
+      </div>
+      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+        {courses.map((c) => {
+          const col = courseColor(c.name);
+          return (
+            <Link key={c.id} href={`/child/${childId}/course/${c.id}`} className="flex min-h-[140px] flex-col gap-2 rounded-[24px] p-5 transition hover:-translate-y-0.5 hover:shadow-[0_8px_22px_-12px_rgba(0,0,0,0.35)]"
+              style={{ background: tint(col, 16), color: shade(col) }}>
+              <span className="flex items-start justify-between gap-2">
+                <span className="text-[16px] font-bold leading-snug">{shortCourse(c.name)}</span>
+                {c.score != null && <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold">{letterFor(c.score)}</span>}
+              </span>
+              <span className="text-[42px] font-extrabold leading-none tracking-[-0.02em]">{c.score == null ? '—' : `${Math.round(c.score)}%`}</span>
+              <span className="text-xs font-medium opacity-85">
+                {c.teacher ?? ''}{c.scoreSource === 'assignments' ? ' · estimate' : ''}
+                {c.pastDue ? <> · <strong>{c.pastDue} past due</strong></> : c.dueThisWeek ? <> · {c.dueThisWeek} this week</> : ' · caught up'}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -142,7 +184,7 @@ function CourseTable({ courses, childId }: { courses: CourseSummary[]; childId: 
                 <td className="px-1 py-2">
                   <div className="flex items-center gap-2">
                     <span aria-hidden className="h-2 w-2 flex-none rounded-full" style={{ background: courseColor(c.name) }} />
-                    <span className="font-medium" title={c.name}>{shortCourse(c.name)}</span>
+                    <Link href={`/child/${childId}/course/${c.id}`} className="font-semibold hover:underline" title={c.name}>{shortCourse(c.name)}</Link>
                   </div>
                   {c.teacher && <div className="pl-4 text-xs text-muted">{c.teacher}</div>}
                 </td>
