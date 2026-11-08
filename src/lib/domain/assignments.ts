@@ -51,12 +51,31 @@ export interface Scope {
   excluded: Set<string>;  // permanent parent dismissals
   included: Set<string>;  // previous-period items deliberately included
   current: GradingPeriod | null;
+  /** Start of the current school year. Work due before it (e.g. last year's items left in a reused course) is history, not a to-do. */
+  yearStart?: Date | null;
+}
+
+/**
+ * Start of the current school year: the earliest configured grading period that is still part of this school year,
+ * otherwise July 15 (US school years start in late July/August).
+ */
+export function schoolYearStart(now: Date, periods: Pick<GradingPeriod, 'startsOn' | 'endsOn'>[] = []): Date {
+  const y = now.getUTCMonth() >= 6 ? now.getUTCFullYear() : now.getUTCFullYear() - 1;
+  const fallback = `${y}-07-15`;
+  const inYear = periods.filter((p) => p.endsOn >= fallback).map((p) => p.startsOn).sort()[0];
+  return new Date(`${inYear && inYear < fallback ? inYear : fallback}T00:00:00Z`);
+}
+
+/** Due before this school year started (and not deliberately brought back by a parent). */
+export function isFromPreviousYear(a: Assignment, scope: Pick<Scope, 'yearStart' | 'included'>): boolean {
+  return !!scope.yearStart && !!a.dueAt && a.dueAt.getTime() < scope.yearStart.getTime() && !scope.included.has(a.id);
 }
 
 /** Should this assignment appear in CURRENT reminders/summaries? */
 export function inReminderScope(a: Assignment, scope: Scope): boolean {
   if (scope.excluded.has(a.id)) return false;                  // exclusions always win
   if (scope.included.has(a.id)) return true;
+  if (isFromPreviousYear(a, scope)) return false;               // last year's leftovers never trigger reminders
   if (!scope.current) return true;                              // no periods configured: don't hide anything
   if (a.periodId == null) return true;
   return a.periodId === scope.current.id;
