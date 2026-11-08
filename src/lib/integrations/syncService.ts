@@ -10,6 +10,8 @@ export interface NormalizedAssignment {
   dueAt: string | null; closesAt: string | null; pointsPossible: number | null; score: number | null;
   submissionStatus: string; submittedAt: string | null; gradedAt: string | null;
   attemptsUsed: number | null; attemptsAllowed: number | null; attemptsUnlimited: boolean;
+  /** Gradebook category and its weight (percent), when the source provides them. */
+  groupName?: string | null; groupWeight?: number | null;
 }
 
 export function normalizeCanvas(d: CanvasData): NormalizedAssignment[] {
@@ -22,6 +24,7 @@ export function normalizeCanvas(d: CanvasData): NormalizedAssignment[] {
       dueAt: a.due_at, closesAt: a.lock_at, pointsPossible: a.points_possible, score: a.submission?.score ?? null,
       submissionStatus: mapCanvasSubmission(a), submittedAt: a.submission?.submitted_at ?? null, gradedAt: a.submission?.graded_at ?? null,
       ...mapCanvasAttempts(a),
+      groupName: a.groupName ?? null, groupWeight: a.groupWeight ?? null,
     };
   });
 }
@@ -80,16 +83,17 @@ async function upsertAssignments(q: Q, conn: Row, items: NormalizedAssignment[],
     const [period] = await q<Row>(`select id from grading_periods where child_id = $1 and kind = 'quarter'
         and coalesce($2::timestamptz, $3::timestamptz)::date between starts_on and ends_on limit 1`, [conn.child_id, it.dueAt, now.toISOString()]);
     await q(`insert into assignments(family_id, child_id, course_id, period_id, source, external_id, title, kind, teacher, source_url, due_at, closes_at,
-          points_possible, score, submission_status, submitted_at, graded_at, attempts_used, attempts_allowed, attempts_unlimited, updated_at)
-        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+          points_possible, score, submission_status, submitted_at, graded_at, attempts_used, attempts_allowed, attempts_unlimited, updated_at, group_name, group_weight)
+        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
         on conflict (child_id, source, external_id) do update set title = excluded.title, kind = excluded.kind, teacher = excluded.teacher,
           source_url = excluded.source_url, due_at = excluded.due_at, closes_at = excluded.closes_at, points_possible = excluded.points_possible,
           score = excluded.score, submission_status = excluded.submission_status, submitted_at = excluded.submitted_at, graded_at = excluded.graded_at,
           attempts_used = excluded.attempts_used, attempts_allowed = excluded.attempts_allowed, attempts_unlimited = excluded.attempts_unlimited,
-          period_id = coalesce(assignments.period_id, excluded.period_id), updated_at = excluded.updated_at`,
+          period_id = coalesce(assignments.period_id, excluded.period_id), updated_at = excluded.updated_at,
+          group_name = coalesce(excluded.group_name, assignments.group_name), group_weight = coalesce(excluded.group_weight, assignments.group_weight)`,
       [conn.family_id, conn.child_id, course.id, period?.id ?? null, conn.provider, it.externalId, it.title, it.kind, it.teacher, it.sourceUrl,
        it.dueAt, it.closesAt, it.pointsPossible, it.score, it.submissionStatus, it.submittedAt, it.gradedAt, it.attemptsUsed, it.attemptsAllowed,
-       it.attemptsUnlimited, now.toISOString()]);
+       it.attemptsUnlimited, now.toISOString(), it.groupName ?? null, it.groupWeight ?? null]);
     n++;
   }
   return n;

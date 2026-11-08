@@ -12,6 +12,7 @@ const ALLOWED_GET: RegExp[] = [
   /^\/api\/v1\/users\/self\/observees$/,
   /^\/api\/v1\/users\/\d+\/courses$/,
   /^\/api\/v1\/courses\/\d+\/assignments$/,
+  /^\/api\/v1\/courses\/\d+\/assignment_groups$/,
   /^\/api\/v1\/courses\/\d+\/enrollments$/,
   /^\/api\/v1\/users\/\d+\/missing_submissions$/,
 ];
@@ -27,6 +28,7 @@ export function assertReadOnlyRequest(method: string, path: string): void {
 export interface CanvasAssignment {
   id: number; name: string; html_url?: string; due_at: string | null; lock_at: string | null; points_possible: number | null;
   is_quiz_assignment?: boolean; allowed_attempts?: number; // -1 = unlimited
+  assignment_group_id?: number;
   submission?: { workflow_state: string; submitted_at: string | null; score: number | null; graded_at: string | null; missing?: boolean; excused?: boolean; attempt?: number | null };
 }
 
@@ -48,7 +50,10 @@ export function mapCanvasAttempts(a: CanvasAssignment) {
   return { attemptsUsed: used, attemptsAllowed: allowed, attemptsUnlimited: unlimited };
 }
 
-export interface CanvasData { courses: { id: number; name: string; teacher: string | null; currentScore: number | null }[]; assignments: (CanvasAssignment & { courseId: number })[] }
+export interface CanvasData {
+  courses: { id: number; name: string; teacher: string | null; currentScore: number | null; weighted?: boolean }[];
+  assignments: (CanvasAssignment & { courseId: number; groupName?: string | null; groupWeight?: number | null })[];
+}
 
 export function canvasAdapter(opts: { baseUrl: string; token: string; studentCanvasId: number; childName: string; fetchImpl?: typeof fetch }): ProviderAdapter<CanvasData> {
   const f = opts.fetchImpl ?? fetch;
@@ -67,15 +72,21 @@ export function canvasAdapter(opts: { baseUrl: string; token: string; studentCan
       catch (e) { return { ok: false, reason: (e as { auth?: boolean }).auth ? 'Canvas token expired or was revoked' : (e as Error).message }; }
     },
     async fetchAll() {
-      const courses = await get<{ id: number; name: string; enrollments?: { computed_current_score?: number | null }[]; teachers?: { display_name: string }[] }[]>(
+      const courses = await get<{ id: number; name: string; apply_assignment_group_weights?: boolean; enrollments?: { computed_current_score?: number | null }[]; teachers?: { display_name: string }[] }[]>(
         `/api/v1/users/${opts.studentCanvasId}/courses?include[]=total_scores&include[]=teachers&enrollment_state=active&per_page=100`);
       const assignments: CanvasData['assignments'] = [];
       for (const c of courses) {
         const list = await get<CanvasAssignment[]>(`/api/v1/courses/${c.id}/assignments?include[]=submission&per_page=100`);
-        for (const a of list) assignments.push({ ...a, courseId: c.id });
+        // Gradebook categories ("Tests 40%") — optional: a district may hide them, so a failure here never fails the sync.
+        const groups = await get<{ id: number; name: string; group_weight?: number | null }[]>(`/api/v1/courses/${c.id}/assignment_groups?per_page=100`).catch(() => []);
+        const byId = new Map(groups.map((g) => [g.id, g]));
+        for (const a of list) {
+          const g = a.assignment_group_id != null ? byId.get(a.assignment_group_id) : undefined;
+          assignments.push({ ...a, courseId: c.id, groupName: g?.name ?? null, groupWeight: c.apply_assignment_group_weights ? g?.group_weight ?? null : null });
+        }
       }
       return {
-        courses: courses.map((c) => ({ id: c.id, name: c.name, teacher: c.teachers?.[0]?.display_name ?? null, currentScore: c.enrollments?.[0]?.computed_current_score ?? null })),
+        courses: courses.map((c) => ({ id: c.id, name: c.name, teacher: c.teachers?.[0]?.display_name ?? null, currentScore: c.enrollments?.[0]?.computed_current_score ?? null, weighted: !!c.apply_assignment_group_weights })),
         assignments,
       };
     },
