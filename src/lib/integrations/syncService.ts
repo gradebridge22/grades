@@ -95,7 +95,13 @@ async function upsertAssignments(q: Q, conn: Row, items: NormalizedAssignment[],
   return n;
 }
 
-export async function syncConnection<T>(db: Db, connectionId: string, adapter: ProviderAdapter<T>, normalize: (d: T) => NormalizedAssignment[], now = new Date()) {
+export interface CourseScore { externalId: string; name: string; teacher: string | null; score: number | null }
+
+export const canvasCourseScores = (d: CanvasData): CourseScore[] =>
+  d.courses.map((c) => ({ externalId: String(c.id), name: c.name, teacher: c.teacher, score: c.currentScore }));
+
+export async function syncConnection<T>(db: Db, connectionId: string, adapter: ProviderAdapter<T>, normalize: (d: T) => NormalizedAssignment[], now = new Date(),
+  courseScores?: (d: T) => CourseScore[]) {
   const [conn] = await db.asService((q) => q<Row>(`select * from integration_connections where id = $1`, [connectionId]));
   if (!conn) throw new Error('connection not found');
   const prev: ConnectionState = {
@@ -105,7 +111,13 @@ export async function syncConnection<T>(db: Db, connectionId: string, adapter: P
   const result = await runSync(adapter, prev, now);
   return db.asService(async (q) => {
     let upserted = 0;
-    if (result.outcome === 'success') upserted = await upsertAssignments(q, conn, normalize(result.data), now);
+    if (result.outcome === 'success') {
+      upserted = await upsertAssignments(q, conn, normalize(result.data), now);
+      for (const c of courseScores?.(result.data) ?? []) {
+        const id = await upsertCourse(q, conn, c.externalId, c.name, c.teacher);
+        await q(`update courses set current_score = $2, current_score_at = $3 where id = $1`, [id, c.score, now.toISOString()]);
+      }
+    }
     const s = result.state;
     await q(`update integration_connections set status = $2, last_attempt_at = $3, last_success_at = $4, last_error = $5, not_refreshed = $6 where id = $1`,
       [connectionId, s.status, s.lastAttemptAt?.toISOString() ?? null, s.lastSuccessAt?.toISOString() ?? null, s.lastError, s.notRefreshed]);
