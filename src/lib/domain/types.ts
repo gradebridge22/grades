@@ -50,6 +50,9 @@ export interface Assignment {
   retakeClosesAt: Date | null;
   retakeNote: string | null;
   retakeVerifiedAt: Date | null;
+  /** Gradebook category ("Tests") and its weight in percent, when known. */
+  groupName?: string | null;
+  groupWeight?: number | null;
 }
 
 export interface Reply {
