@@ -70,8 +70,15 @@ export async function inviteMember(f: FormData) {
   await (await getDb()).asUser(me.userId, (q) => q(`insert into family_invites(family_id, email, role, child_id, token_hash, expires_at, created_by)
      values ($1,$2,$3,$4,$5, now() + interval '7 days', $6)`, [me.familyId, email, role, childId, hash, me.userId]));
   const link = `${process.env.APP_URL ?? 'http://localhost:3000'}/invite/${token}`;
-  await defaultEmailProvider().send({ to: email, subject: `${me.displayName} invited you to OnTrack Grades`, text: `Accept within 7 days: ${link}`, idempotencyKey: `invite:${hash}` });
-  redirect(`/onboarding?invited=${encodeURIComponent(email)}${DEMO_MODE ? `&link=${encodeURIComponent(link)}` : ''}`);
+  let emailed = true;
+  try {
+    await defaultEmailProvider().send({ to: email, subject: `${me.displayName} invited you to OnTrack Grades`, text: `Accept within 7 days: ${link}`, idempotencyKey: `invite:${hash}` });
+  } catch (err) {
+    emailed = false; // e.g. email provider not set up for this recipient yet: show the link so the parent can share it directly
+    console.error('invite email failed', err);
+  }
+  const showLink = DEMO_MODE || !emailed;
+  redirect(`/onboarding?invited=${encodeURIComponent(email)}${emailed ? '' : '&unsent=1'}${showLink ? `&link=${encodeURIComponent(link)}` : ''}`);
 }
 
 // ---------- assignments ----------
