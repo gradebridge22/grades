@@ -2,12 +2,12 @@
 @theme {
   --color-ink: #16181d;
   --color-muted: #6b7079;
-  --color-paper: #fafaf8;      /* app background */
-  --color-panel: #f4f4f1;      /* sidebar */
-  --color-line: #e4e4e0;       /* borders */
+  --color-paper: #fffdf8;      /* app background (warm) */
+  --color-panel: #f6f3ea;      /* sidebar */
+  --color-line: #ebe6da;       /* borders */
   --color-rule: #ececE8;
-  --color-brand: #0e7c66;      /* the one accent */
-  --color-brand-soft: #e3f2ee;
+  --color-brand: #e8590c;      /* the one accent (user-selectable) */
+  --color-brand-soft: #fff0e5;
   --color-link: #2a5db0;
   --color-good: #0e7c66;
   --color-good-soft: #e3f2ee;
@@ -21,14 +21,23 @@
   --font-mono: "Geist Mono", ui-monospace, monospace;
 }
 body { background: var(--color-paper); color: var(--color-ink); }
+
+/* "Customize view" — set on <html> from the user's saved preferences */
+html[data-font="friendly"] { --font-sans: "Bricolage Grotesque", "Geist", ui-sans-serif, system-ui, sans-serif; }
+html[data-density="compact"] { font-size: 14.5px; }
+html[data-accent="blue"]   { --color-brand: #1c4fa0; --color-brand-soft: #eaf2ff; }
+html[data-accent="green"]  { --color-brand: #1f6b3a; --color-brand-soft: #ddf5e4; }
+html[data-accent="purple"] { --color-brand: #6741d9; --color-brand-soft: #efeaff; }
+html[data-accent="ink"]    { --color-brand: #22221f; --color-brand-soft: #f1f0ec; }
+html[data-font="friendly"] h1, html[data-font="friendly"] h2 { letter-spacing: -0.02em; }
 a { text-underline-offset: 3px; }
 
 @utility btn { @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3.5 text-sm font-medium transition; }
-@utility btn-primary { @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3.5 text-sm font-medium transition bg-ink text-white hover:bg-[#2b2e36]; }
-@utility btn-ghost { @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3.5 text-sm font-medium transition border border-[#d9d9d4] bg-white text-ink hover:bg-[#f7f7f5]; }
+@utility btn-primary { @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition bg-brand text-white hover:opacity-90; }
+@utility btn-ghost { @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition border border-[#ddd6c8] bg-white text-ink hover:bg-[#faf7f0]; }
 @utility btn-danger { @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3.5 text-sm font-medium transition bg-bad text-white hover:bg-[#9a1d13]; }
 @utility input { @apply w-full rounded-lg border border-[#d9d9d4] bg-white px-3 py-2 text-sm focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/10; }
 @utility label { @apply mb-1 block text-xs font-medium text-muted; }
 @utility ruled { background-color: transparent; }
-@utility notebook-card { @apply rounded-[10px] border border-line bg-white; }
+@utility notebook-card { @apply rounded-[20px] border border-line bg-white; }
 @utility nums { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }

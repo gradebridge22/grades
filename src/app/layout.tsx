@@ -6,9 +6,10 @@ import { DEMO_MODE, currentUserId } from '@/lib/auth/session';
 import { getDb } from '@/lib/data/db';
 import { getMe, listChildren } from '@/lib/data/queries';
 import { logout } from './actions';
+import { getViewPrefs } from '@/lib/viewPrefs.server';
 
 export const metadata: Metadata = { title: 'OnTrack Grades', description: 'Schoolwork tracking for families', robots: { index: false, follow: false } };
-export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#fafaf8' };
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#fffdf8' };
 export const dynamic = 'force-dynamic';
 
 function Logo() {
@@ -20,12 +21,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const db = await getDb();
   const me = uid ? await getMe(db, uid) : null;
   const kids = me && me.role !== 'student' ? (await listChildren(db, me.userId)).map((k) => ({ id: k.id, name: k.display_name })) : [];
+  const view = await getViewPrefs();
   return (
-    <html lang="en">
+    <html lang="en" data-accent={view.accent} data-font={view.font} data-density={view.density}>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
       </head>
       <body className="min-h-screen font-sans antialiased">
         {DEMO_MODE && (
