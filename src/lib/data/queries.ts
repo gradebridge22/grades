@@ -5,7 +5,7 @@
 import type { Db, Q } from './engine';
 import type { Assignment, GradingPeriod, Reply, FamilyCalendar, ReplyStatus } from '../domain/types';
 import type { Scope } from '../domain/assignments';
-import { currentPeriod, schoolYearStart } from '../domain/assignments';
+import { currentPeriod, schoolYearStart, withInferredPeriods } from '../domain/assignments';
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const d = (v: unknown) => (v == null ? null : new Date(v as string));
@@ -56,8 +56,9 @@ export async function loadChildData(q: Q, childId: string, tz: string, now = new
   if (!child) return null; // RLS hides other families' children, so this is also the authorization check
   const periods = (await q<Row>(`select * from grading_periods where child_id = $1 order by starts_on`, [childId])).map(mapPeriod);
   const courses = await q<Row>(`select * from courses where child_id = $1 order by name`, [childId]);
-  const assignments = (await q<Row>(`select a.*, c.name course_name, c.teacher course_teacher from assignments a join courses c on c.id = a.course_id
+  const rawAssignments = (await q<Row>(`select a.*, c.name course_name, c.teacher course_teacher from assignments a join courses c on c.id = a.course_id
       where a.child_id = $1 order by a.due_at nulls last`, [childId])).map(mapAssignment);
+  const assignments = withInferredPeriods(rawAssignments, periods, tz);
   const replies = (await q<Row>(`select * from student_replies where child_id = $1 order by created_at`, [childId])).map(mapReply);
   const excl = await q<Row>(`select e.* from assignment_exclusions e join assignments a on a.id = e.assignment_id where a.child_id = $1`, [childId]);
   const incl = await q<Row>(`select i.* from assignment_inclusions i join assignments a on a.id = i.assignment_id where a.child_id = $1`, [childId]);
