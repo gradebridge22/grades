@@ -12,7 +12,7 @@ export type RetakeView =
 export const RETAKE_LABELS: Record<RetakeView, string> = {
   confirmed_open: 'Retake open (confirmed)',
   teacher_approved: 'Teacher-approved retake',
-  unused_attempts_unknown: 'Unused attempts — availability unknown',
+  unused_attempts_unknown: 'Attempts may remain — ask the teacher',
   attempts_unknown: 'Attempts unknown',
   closed: 'Retake closed',
   not_applicable: '—',
