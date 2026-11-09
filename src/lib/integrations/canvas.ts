@@ -13,6 +13,7 @@ const ALLOWED_GET: RegExp[] = [
   /^\/api\/v1\/users\/\d+\/courses$/,
   /^\/api\/v1\/courses\/\d+\/assignments$/,
   /^\/api\/v1\/courses\/\d+\/assignment_groups$/,
+  /^\/api\/v1\/courses\/\d+\/quizzes$/, // quiz SETTINGS list only (attempt limits); never quiz_submissions
   /^\/api\/v1\/courses\/\d+\/enrollments$/,
   /^\/api\/v1\/users\/\d+\/missing_submissions$/,
 ];
@@ -28,6 +29,9 @@ export function assertReadOnlyRequest(method: string, path: string): void {
 export interface CanvasAssignment {
   id: number; name: string; html_url?: string; due_at: string | null; lock_at: string | null; points_possible: number | null;
   is_quiz_assignment?: boolean; allowed_attempts?: number; // -1 = unlimited
+  quiz_id?: number; submission_types?: string[];
+  /** Attempt limit from the quiz's own settings (classic quizzes keep it there, not on the assignment). */
+  quizAllowedAttempts?: number | null;
   assignment_group_id?: number;
   submission?: { workflow_state: string; submitted_at: string | null; score: number | null; graded_at: string | null; missing?: boolean; excused?: boolean; attempt?: number | null };
 }
@@ -43,9 +47,12 @@ export function mapCanvasSubmission(a: CanvasAssignment): SubmissionStatus {
 }
 
 export function mapCanvasAttempts(a: CanvasAssignment) {
-  // Canvas exposes allowed_attempts on the assignment (-1 unlimited). If absent, attempts are UNKNOWN — never assume.
-  const unlimited = a.allowed_attempts === -1;
-  const allowed = a.allowed_attempts != null && a.allowed_attempts > 0 ? a.allowed_attempts : null;
+  // Classic quizzes keep their attempt limit in the quiz settings; the assignment then reports -1 ("unlimited"),
+  // which is NOT true. For quizzes, only the quiz's own setting counts; if we couldn't read it, attempts are unknown.
+  const isQuiz = !!a.is_quiz_assignment || a.quiz_id != null || (a.submission_types ?? []).includes('online_quiz');
+  const limit = isQuiz ? a.quizAllowedAttempts : a.allowed_attempts;
+  const unlimited = limit === -1;
+  const allowed = limit != null && limit > 0 ? limit : null;
   const used = a.submission?.attempt ?? null;
   return { attemptsUsed: used, attemptsAllowed: allowed, attemptsUnlimited: unlimited };
 }
@@ -80,9 +87,13 @@ export function canvasAdapter(opts: { baseUrl: string; token: string; studentCan
         // Gradebook categories ("Tests 40%") — optional: a district may hide them, so a failure here never fails the sync.
         const groups = await get<{ id: number; name: string; group_weight?: number | null }[]>(`/api/v1/courses/${c.id}/assignment_groups?per_page=100`).catch(() => []);
         const byId = new Map(groups.map((g) => [g.id, g]));
+        const hasQuiz = list.some((a) => a.quiz_id != null || a.is_quiz_assignment);
+        const quizzes = hasQuiz ? await get<{ id: number; allowed_attempts?: number | null }[]>(`/api/v1/courses/${c.id}/quizzes?per_page=100`).catch(() => []) : [];
+        const quizLimit = new Map(quizzes.map((q) => [q.id, q.allowed_attempts ?? null]));
         for (const a of list) {
           const g = a.assignment_group_id != null ? byId.get(a.assignment_group_id) : undefined;
-          assignments.push({ ...a, courseId: c.id, groupName: g?.name ?? null, groupWeight: c.apply_assignment_group_weights ? g?.group_weight ?? null : null });
+          assignments.push({ ...a, courseId: c.id, groupName: g?.name ?? null, groupWeight: c.apply_assignment_group_weights ? g?.group_weight ?? null : null,
+            quizAllowedAttempts: a.quiz_id != null ? quizLimit.get(a.quiz_id) ?? null : null });
         }
       }
       return {
