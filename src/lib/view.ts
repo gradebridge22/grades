@@ -1,5 +1,5 @@
 import type { ChildData } from './data/queries';
-import { classify, teacherFollowUps, latestReply, isFromPreviousYear, scorePct, LOW_SCORE_THRESHOLD, type Bucket, type FollowUpRule } from './domain/assignments';
+import { classify, teacherFollowUps, latestReply, isFromPreviousYear, previousQuarter, scorePct, LOW_SCORE_THRESHOLD, type Bucket, type FollowUpRule } from './domain/assignments';
 import { retakeOpportunities } from './domain/retakes';
 import { improvementsFromHistory } from './domain/encouragement';
 import { freshness, type Freshness } from './domain/sync';
@@ -71,7 +71,8 @@ export function summarize(cd: ChildData, cal: FamilyCalendar, rule: FollowUpRule
   const lowScores = buckets.low_score.slice().sort((a, b) => (scorePct(a) ?? 0) - (scorePct(b) ?? 0));
   const courses = courseSummaries(cd, buckets, dueThisWeek, now);
   const lowest = courses.filter((c) => c.score != null).sort((a, b) => a.score! - b.score!)[0] ?? null;
-  return { buckets, previous, followUps, retakes, improvements, stale, dueThisWeek, lowScores, courses, lowest,
+  const lastQuarter = lastQuarterSummary(cd, previous, now);
+  return { buckets, previous, lastQuarter, followUps, retakes, improvements, stale, dueThisWeek, lowScores, courses, lowest,
     latest: (id: string) => latestReply(cd.replies, id) };
 }
 
@@ -152,4 +153,27 @@ export function gradesTable(cd: ChildData, now = new Date()) {
       hasAnyGrade: g.length > 0,
     };
   });
+}
+
+export interface LastQuarter {
+  name: string; startsOn: string; endsOn: string;
+  items: Assignment[]; missing: Assignment[]; graded: number;
+  courses: { id: string; shortName: string; pct: number | null; missing: number; reportCard: number | null }[];
+}
+
+/** Read-only recap of the quarter before the current one. Never counted as pending. */
+export function lastQuarterSummary(cd: ChildData, previous: Assignment[], now = new Date()): LastQuarter | null {
+  const p = previousQuarter(cd.periods, cd.scope.current);
+  if (!p) return null;
+  const items = previous.filter((a) => a.periodId === p.id);
+  const missing = items.filter((a) => ['missing', 'overdue'].includes(classify(a, now)));
+  const graded = items.filter((a) => a.score != null && a.pointsPossible);
+  const courses = cd.courses.map((c: Row) => {
+    const g = graded.filter((a) => a.courseId === c.id);
+    const pts = g.reduce((t, a) => t + (a.score ?? 0), 0), poss = g.reduce((t, a) => t + (a.pointsPossible ?? 0), 0);
+    const rc = cd.grades.find((x: Row) => x.course_id === c.id && x.period_id === p.id && x.percent != null);
+    return { id: c.id, shortName: shortCourse(c.name), pct: poss ? pts / poss : null,
+      missing: missing.filter((a) => a.courseId === c.id).length, reportCard: rc ? Number(rc.percent) : null };
+  }).filter((c) => c.pct != null || c.missing || c.reportCard != null);
+  return { name: p.name, startsOn: p.startsOn, endsOn: p.endsOn, items, missing, graded: graded.length, courses };
 }
