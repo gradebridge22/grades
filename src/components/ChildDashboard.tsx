@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { ChildData, Me } from '@/lib/data/queries';
-import { summarize, shortCourse, type CourseSummary } from '@/lib/view';
+import { summarize, shortCourse, type CourseSummary, type LastQuarter } from '@/lib/view';
 import { nudge, praise } from '@/lib/domain/encouragement';
 import { RETAKE_LABELS, isAdvertisedAsAvailable } from '@/lib/domain/retakes';
 import { DONE_REPLIES, type Assignment } from '@/lib/domain/types';
@@ -107,7 +107,7 @@ export async function ChildDashboard({ cd, me, rule, asStudent }: { cd: ChildDat
         { label: 'due this week', value: s.dueThisWeek.length, tone: 'info', sub: 'next 7 days', href: work('week') },
         { label: 'waiting for a grade', value: s.buckets.submitted_ungraded.length, tone: 'neutral', sub: 'turned in', href: work('waiting') },
         { label: 'missing · closed', value: closedMissing.length, tone: closedMissing.length ? 'bad' : 'good', sub: 'ask about late credit', href: work('closed') },
-        { label: 'under 70%', value: s.lowScores.length, tone: s.lowScores.length ? 'bad' : 'good', sub: 'this school year', href: work('low') },
+        { label: 'under 70%', value: s.lowScores.length, tone: s.lowScores.length ? 'bad' : 'good', sub: s.lastQuarter ? 'this quarter' : 'this school year', href: work('low') },
       ]} />
 
       {s.courses.length > 0 && (view.courses === 'tiles'
@@ -116,13 +116,15 @@ export async function ChildDashboard({ cd, me, rule, asStudent }: { cd: ChildDat
 
       {view.order.map((id) => sections[id])}
 
-      {s.previous.length > 0 && (
+      {s.lastQuarter && s.lastQuarter.items.length > 0 && <LastQuarterCard q={s.lastQuarter} tz={tz} now={now} />}
+
+      {s.previous.length - (s.lastQuarter?.items.length ?? 0) > 0 && (
         <details className="rounded-[20px] border border-dashed border-line p-4 text-sm">
           <summary className="cursor-pointer font-medium text-muted">
-            Hidden: {s.previous.length} item{s.previous.length === 1 ? '' : 's'} from before this school year or an earlier grading period
+            Hidden: {s.previous.length - (s.lastQuarter?.items.length ?? 0)} older item{s.previous.length - (s.lastQuarter?.items.length ?? 0) === 1 ? '' : 's'} from before this school year
           </summary>
           <p className="mt-1 text-xs text-muted">Usually last year&apos;s assignments left in a course the teacher reused. They don&apos;t count in the numbers above and never trigger reminders.</p>
-          <ul className="mt-2">{s.previous.map((a) => <AssignmentRow key={a.id} a={a} tz={tz} now={now} />)}</ul>
+          <ul className="mt-2">{s.previous.filter((a) => !s.lastQuarter?.items.includes(a)).map((a) => <AssignmentRow key={a.id} a={a} tz={tz} now={now} />)}</ul>
         </details>
       )}
     </div>
@@ -205,5 +207,36 @@ function CourseTable({ courses, childId }: { courses: CourseSummary[]; childId: 
       </div>
       <p className="mt-2 text-xs text-muted">Grade = the school platform&apos;s running course grade. &ldquo;points avg&rdquo; = estimate until the next sync brings the official number.</p>
     </Card>
+  );
+}
+
+function LastQuarterCard({ q, tz, now }: { q: LastQuarter; tz: string; now: Date }) {
+  const fmt = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return (
+    <section className="notebook-card p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold">Last quarter · {q.name}</h2>
+        <span className="text-xs text-muted">{fmt(q.startsOn)} – {fmt(q.endsOn)} · for reference, not counted as pending</span>
+      </div>
+      {q.courses.length > 0 && (
+        <table className="mt-3 w-full text-sm">
+          <thead><tr className="text-left text-xs text-muted"><th className="py-1 font-medium">Course</th><th className="font-medium">Report card</th><th className="font-medium">Graded work</th><th className="font-medium">Never turned in</th></tr></thead>
+          <tbody>{q.courses.map((c) => (
+            <tr key={c.id} className="border-t border-line">
+              <td className="py-1.5">{c.shortName}</td>
+              <td>{c.reportCard != null ? `${Math.round(c.reportCard)}%` : '—'}</td>
+              <td>{c.pct != null ? `${Math.round(c.pct * 100)}%` : '—'}</td>
+              <td className={c.missing ? 'font-semibold text-bad' : 'text-muted'}>{c.missing || '0'}</td>
+            </tr>))}
+          </tbody>
+        </table>
+      )}
+      {q.missing.length > 0 && (
+        <details className="mt-3 text-sm">
+          <summary className="cursor-pointer font-medium text-muted">{q.missing.length} {q.name} item{q.missing.length === 1 ? '' : 's'} never turned in</summary>
+          <ul className="mt-2">{q.missing.map((a) => <AssignmentRow key={a.id} a={a} tz={tz} now={now} />)}</ul>
+        </details>
+      )}
+    </section>
   );
 }
