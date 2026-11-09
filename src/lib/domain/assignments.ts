@@ -44,7 +44,43 @@ export function currentPeriod(periods: GradingPeriod[], now: Date, tz: string): 
   const today = localDate(now, tz);
   const containing = periods.filter((p) => p.startsOn <= today && today <= p.endsOn);
   const rank = { quarter: 0, semester: 1, year: 2 } as const;
-  return containing.sort((a, b) => rank[a.kind] - rank[b.kind])[0] ?? null;
+  const hit = containing.sort((a, b) => rank[a.kind] - rank[b.kind])[0];
+  if (hit) return hit;
+  // Break between quarters (e.g. a teacher workday or winter break): stay on the quarter that just ended.
+  const recent = DateTimeShift(today, -30);
+  return periods.filter((p) => p.kind === 'quarter' && p.startsOn <= today && p.endsOn >= recent)
+    .sort((a, b) => (a.startsOn < b.startsOn ? 1 : -1))[0] ?? null;
+}
+
+function DateTimeShift(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Quarter a due date belongs to: the latest quarter that started on or before it (so a break day
+ * after a quarter ends still counts toward that quarter). Null when there are no quarters or the
+ * date is before the first one.
+ */
+export function quarterFor(dueAt: Date | null, quarters: GradingPeriod[], tz: string): GradingPeriod | null {
+  if (!dueAt) return null;
+  const d = localDate(dueAt, tz);
+  const qs = quarters.filter((p) => p.kind === 'quarter' && p.startsOn <= d).sort((a, b) => (a.startsOn < b.startsOn ? 1 : -1));
+  return qs[0] ?? null;
+}
+
+/** Fill in a missing period from the due date so the quarter filter works for every item. */
+export function withInferredPeriods(list: Assignment[], periods: GradingPeriod[], tz: string): Assignment[] {
+  if (!periods.some((p) => p.kind === 'quarter')) return list;
+  return list.map((a) => (a.periodId != null ? a : { ...a, periodId: quarterFor(a.dueAt, periods, tz)?.id ?? null }));
+}
+
+/** The quarter right before the current one (e.g. Q1 while in Q2). */
+export function previousQuarter(periods: GradingPeriod[], current: GradingPeriod | null): GradingPeriod | null {
+  if (!current) return null;
+  return periods.filter((p) => p.kind === 'quarter' && p.endsOn < current.startsOn)
+    .sort((a, b) => (a.startsOn < b.startsOn ? 1 : -1))[0] ?? null;
 }
 
 export interface Scope {
