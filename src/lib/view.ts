@@ -170,9 +170,8 @@ export function lastQuarterSummary(cd: ChildData, previous: Assignment[], now = 
   const graded = items.filter((a) => a.score != null && a.pointsPossible);
   const courses = cd.courses.map((c: Row) => {
     const g = graded.filter((a) => a.courseId === c.id);
-    const pts = g.reduce((t, a) => t + (a.score ?? 0), 0), poss = g.reduce((t, a) => t + (a.pointsPossible ?? 0), 0);
     const rc = cd.grades.find((x: Row) => x.course_id === c.id && x.period_id === p.id && x.percent != null);
-    return { id: c.id, shortName: shortCourse(c.name), pct: poss ? pts / poss : null,
+    return { id: c.id, shortName: shortCourse(c.name), pct: weightedPct(g),
       missing: missing.filter((a) => a.courseId === c.id).length, reportCard: rc ? Number(rc.percent) : null };
   }).filter((c) => c.pct != null || c.missing || c.reportCard != null);
   return { name: p.name, startsOn: p.startsOn, endsOn: p.endsOn, items, missing, graded: graded.length, courses };
@@ -192,10 +191,9 @@ export function courseOverview(cd: ChildData, now = new Date()): CourseOverview[
     if (!p) return null;
     const items = cd.assignments.filter((a) => a.courseId === courseId && a.periodId === p.id && !cd.scope.excluded.has(a.id));
     const graded = items.filter((a) => a.score != null && a.pointsPossible);
-    const pts = graded.reduce((t, a) => t + (a.score ?? 0), 0), poss = graded.reduce((t, a) => t + (a.pointsPossible ?? 0), 0);
     const missing = items.filter((a) => ['missing', 'overdue'].includes(classify(a, now))).length;
     const rc = cd.grades.find((g: Row) => g.course_id === courseId && g.period_id === p.id && g.source_type === 'official' && g.percent != null);
-    return { name: p.name, pct: poss ? pts / poss : null, graded: graded.length, missing,
+    return { name: p.name, pct: weightedPct(graded), graded: graded.length, missing,
       reportCard: rc ? Number(rc.percent) : null, reportLetter: rc?.letter ?? null };
   };
   return cd.courses.map((c: Row) => ({
@@ -204,4 +202,28 @@ export function courseOverview(cd: ChildData, now = new Date()): CourseOverview[
     canvasAt: c.current_score_at ? new Date(c.current_score_at) : null,
     current: stat(cur, c.id), previous: stat(prev, c.id),
   })).sort((a, b) => (a.canvasNow ?? 999) - (b.canvasNow ?? 999));
+}
+
+/**
+ * Grade the way Canvas does it: per category (score / possible), then weighted by the category weights,
+ * re-scaled over the categories that have graded work. Falls back to plain points when the course isn't weighted.
+ */
+export function weightedPct(graded: Pick<Assignment, 'score' | 'pointsPossible' | 'groupName' | 'groupWeight'>[]): number | null {
+  const g = graded.filter((a) => a.score != null && a.pointsPossible);
+  if (!g.length) return null;
+  const weighted = g.some((a) => a.groupWeight != null && a.groupWeight > 0);
+  if (!weighted) {
+    const pts = g.reduce((t, a) => t + (a.score ?? 0), 0), poss = g.reduce((t, a) => t + (a.pointsPossible ?? 0), 0);
+    return poss ? pts / poss : null;
+  }
+  const groups = new Map<string, { s: number; p: number; w: number }>();
+  for (const a of g) {
+    const k = a.groupName ?? 'Other';
+    const cur = groups.get(k) ?? { s: 0, p: 0, w: a.groupWeight ?? 0 };
+    cur.s += a.score ?? 0; cur.p += a.pointsPossible ?? 0;
+    groups.set(k, cur);
+  }
+  let num = 0, den = 0;
+  for (const x of groups.values()) if (x.p > 0 && x.w > 0) { num += (x.s / x.p) * x.w; den += x.w; }
+  return den ? num / den : null;
 }
