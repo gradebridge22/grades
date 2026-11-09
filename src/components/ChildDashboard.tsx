@@ -67,7 +67,7 @@ export async function ChildDashboard({ cd, me, rule, asStudent }: { cd: ChildDat
       </details>
     ) : null,
     lowScores: (s.lowScores.length > 0 || confirmedRetakes.length > 0) ? (
-      <Card key="lowScores" title={<>Low scores this year <span className="text-muted">({s.lowScores.length})</span></>}
+      <Card key="lowScores" title={<>Low scores this quarter <span className="text-muted">({s.lowScores.length})</span></>}
         action={<Link href={work('low')} className="text-sm font-semibold text-link">See all</Link>}>
         <p className="mb-1 text-xs text-muted">Graded under 70%. Lowest first. Ask about corrections or retakes where the teacher allows them.</p>
         <ul>
