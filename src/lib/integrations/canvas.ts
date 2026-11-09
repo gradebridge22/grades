@@ -79,8 +79,8 @@ export function canvasAdapter(opts: { baseUrl: string; token: string; studentCan
       catch (e) { return { ok: false, reason: (e as { auth?: boolean }).auth ? 'Canvas token expired or was revoked' : (e as Error).message }; }
     },
     async fetchAll() {
-      const courses = await get<{ id: number; name: string; apply_assignment_group_weights?: boolean; enrollments?: { computed_current_score?: number | null }[]; teachers?: { display_name: string }[] }[]>(
-        `/api/v1/users/${opts.studentCanvasId}/courses?include[]=total_scores&include[]=teachers&enrollment_state=active&per_page=100`);
+      const courses = await get<{ id: number; name: string; apply_assignment_group_weights?: boolean; enrollments?: { computed_current_score?: number | null; current_period_computed_current_score?: number | null; has_grading_periods?: boolean }[]; teachers?: { display_name: string }[] }[]>(
+        `/api/v1/users/${opts.studentCanvasId}/courses?include[]=total_scores&include[]=current_grading_period_scores&include[]=teachers&enrollment_state=active&per_page=100`);
       const assignments: CanvasData['assignments'] = [];
       for (const c of courses) {
         const list = await get<CanvasAssignment[]>(`/api/v1/courses/${c.id}/assignments?include[]=submission&per_page=100`);
@@ -97,7 +97,9 @@ export function canvasAdapter(opts: { baseUrl: string; token: string; studentCan
         }
       }
       return {
-        courses: courses.map((c) => ({ id: c.id, name: c.name, teacher: c.teachers?.[0]?.display_name ?? null, currentScore: c.enrollments?.[0]?.computed_current_score ?? null, weighted: !!c.apply_assignment_group_weights })),
+        courses: courses.map((c) => ({ id: c.id, name: c.name, teacher: c.teachers?.[0]?.display_name ?? null, // Canvas's grade page shows the CURRENT grading period (e.g. Q2) when the course uses grading periods; match that.
+          currentScore: (() => { const e = c.enrollments?.[0]; if (!e) return null;
+            return e.has_grading_periods && e.current_period_computed_current_score != null ? e.current_period_computed_current_score : e.computed_current_score ?? null; })(), weighted: !!c.apply_assignment_group_weights })),
         assignments,
       };
     },
