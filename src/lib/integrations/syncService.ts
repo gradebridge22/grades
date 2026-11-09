@@ -80,8 +80,12 @@ async function upsertAssignments(q: Q, conn: Row, items: NormalizedAssignment[],
   let n = 0;
   for (const it of items) {
     const course = { id: await upsertCourse(q, conn, it.courseExternalId, it.courseName, it.teacher) };
-    const [period] = await q<Row>(`select id from grading_periods where child_id = $1 and kind = 'quarter'
-        and coalesce($2::timestamptz, $3::timestamptz)::date between starts_on and ends_on limit 1`, [conn.child_id, it.dueAt, now.toISOString()]);
+    // Quarter comes from the DUE date only (latest quarter started on/before it, in the family's timezone).
+    // Undated work gets no quarter, so it is never filed under whatever quarter the sync happened to run in.
+    const [period] = it.dueAt ? await q<Row>(`select g.id from grading_periods g join families f on f.id = g.family_id
+        where g.child_id = $1 and g.kind = 'quarter' and g.starts_on <= ($2::timestamptz at time zone f.timezone)::date
+        order by g.starts_on desc limit 1`, [conn.child_id, it.dueAt]) : [];
+    void now;
     await q(`insert into assignments(family_id, child_id, course_id, period_id, source, external_id, title, kind, teacher, source_url, due_at, closes_at,
           points_possible, score, submission_status, submitted_at, graded_at, attempts_used, attempts_allowed, attempts_unlimited, updated_at, group_name, group_weight)
         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
@@ -89,7 +93,7 @@ async function upsertAssignments(q: Q, conn: Row, items: NormalizedAssignment[],
           source_url = excluded.source_url, due_at = excluded.due_at, closes_at = excluded.closes_at, points_possible = excluded.points_possible,
           score = excluded.score, submission_status = excluded.submission_status, submitted_at = excluded.submitted_at, graded_at = excluded.graded_at,
           attempts_used = excluded.attempts_used, attempts_allowed = excluded.attempts_allowed, attempts_unlimited = excluded.attempts_unlimited,
-          period_id = coalesce(assignments.period_id, excluded.period_id), updated_at = excluded.updated_at,
+          period_id = coalesce(excluded.period_id, assignments.period_id), updated_at = excluded.updated_at,
           group_name = coalesce(excluded.group_name, assignments.group_name), group_weight = coalesce(excluded.group_weight, assignments.group_weight)`,
       [conn.family_id, conn.child_id, course.id, period?.id ?? null, conn.provider, it.externalId, it.title, it.kind, it.teacher, it.sourceUrl,
        it.dueAt, it.closesAt, it.pointsPossible, it.score, it.submissionStatus, it.submittedAt, it.gradedAt, it.attemptsUsed, it.attemptsAllowed,
