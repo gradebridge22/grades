@@ -35,3 +35,15 @@ describe('quarters', () => {
     expect(inReminderScope(now, scope)).toBe(true);
   });
 });
+
+import { weightedPct } from '../src/lib/view';
+describe('weightedPct', () => {
+  it('matches the Canvas screenshot: 74% formative (30), 77.5% summative (50), 86.79% classwork (20) = 78.31%', () => {
+    const a = (g: string, w: number, s: number, p: number) => ({ groupName: g, groupWeight: w, score: s, pointsPossible: p });
+    const pct = weightedPct([a('Formative', 30, 74, 100), a('Summative', 50, 232.5, 300), a('Classwork', 20, 94.6, 109)]);
+    expect(Math.round(pct! * 10000) / 100).toBe(78.31);
+  });
+  it('falls back to points when not weighted', () => {
+    expect(weightedPct([{ groupName: null, groupWeight: null, score: 8, pointsPossible: 10 }])).toBe(0.8);
+  });
+});
