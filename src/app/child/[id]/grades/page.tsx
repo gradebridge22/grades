@@ -1,22 +1,25 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireMe } from '@/lib/auth/session';
 import { getDb } from '@/lib/data/db';
 import { getChildData } from '@/lib/data/queries';
-import { gradesTable, fmtDate, relTime, type GradeCell } from '@/lib/view';
-import { FRESHNESS_LABEL } from '@/lib/domain/sync';
-import { Badge, Card, PageHeader, Sparkline } from '@/components/ui';
+import { courseOverview, relTime, shortCourse, type QuarterStat } from '@/lib/view';
+import { Badge, PageHeader } from '@/components/ui';
 import { courseColor } from '@/lib/courseColor';
+import { letterFor } from '@/lib/viewPrefs';
 
-function Cell({ c, tz }: { c: GradeCell | null; tz: string }) {
-  if (!c) return <span className="text-xs text-muted">No grade posted</span>;
-  const tone = c.freshness === 'current' || c.freshness === 'manual' ? 'muted' : 'warn';
+const pct = (p: number | null) => (p == null ? '—' : `${Math.round(p * 100)}%`);
+
+function Quarter({ q, label }: { q: QuarterStat | null; label: string }) {
+  if (!q) return null;
   return (
-    <div className="leading-tight">
-      <div className="nums text-[15px]">{c.percent != null ? `${c.percent}%` : '—'}{c.letter ? <span className="ml-1 text-muted">{c.letter}</span> : null}</div>
-      <div className="mt-0.5 flex flex-wrap gap-1">
-        <Badge tone={c.status === 'final' ? 'good' : 'neutral'}>{c.status === 'final' ? 'Final' : 'Provisional'}</Badge>
-        <Badge tone={tone}>{c.source.toUpperCase()} · {fmtDate(c.recordedAt, tz)}{c.freshness !== 'manual' && c.freshness !== 'current' ? ` · ${FRESHNESS_LABEL[c.freshness]}` : ''}</Badge>
-      </div>
+    <div className="rounded-xl bg-[#fafaf8] p-2.5">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-muted">{label} · {q.name}</div>
+      <div className="nums mt-0.5 text-lg font-semibold">{pct(q.pct)}</div>
+      <div className="text-xs text-muted">{q.graded} graded{q.missing ? <> · <span className="font-semibold text-bad">{q.missing} missing</span></> : null}</div>
+      <div className="mt-1 text-xs">{q.reportCard != null
+        ? <>Report card: <b>{Math.round(q.reportCard)}%{q.reportLetter ? ` ${q.reportLetter}` : ''}</b></>
+        : <span className="text-muted">Report card: not imported</span>}</div>
     </div>
   );
 }
@@ -26,44 +29,47 @@ export default async function Grades({ params }: { params: Promise<{ id: string 
   const me = await requireMe();
   const cd = await getChildData(await getDb(), me.userId, id, me.calendar.timezone).catch(() => null);
   if (!cd) notFound();
-  const rows = gradesTable(cd);
-  const tz = me.calendar.timezone;
+  const rows = courseOverview(cd);
+  const hasReportCards = cd.grades.some((g: Record<string, unknown>) => g.source_type === 'official');
   return (
     <div className="grid gap-4">
       <PageHeader title={`${cd.child.display_name} · All courses`} back={{ href: me.role === 'student' ? '/student' : `/child/${id}`, label: 'Back' }}
-        sub={<>Official = school information system (e.g. Skyward). Platform = learning platform (e.g. Canvas). Values are shown exactly as last received; nothing is estimated.</>} />
+        sub={<>Lowest grade first. <b>Canvas now</b> is the running grade Canvas shows. Quarter numbers add up the points on graded work due that quarter.</>} />
       <div className="flex flex-wrap gap-2 text-xs">
-        {cd.connections.map((c: Record<string, string>) => (
-          <Badge key={c.id} tone={c.status === 'connected' ? 'good' : c.status === 'reconnect_needed' ? 'warn' : 'muted'}>
-            {c.display_name}: {c.status.replace('_', ' ')} · last success {relTime(c.last_success_at)}
-          </Badge>
+        {cd.connections.filter((c: Record<string, string>) => c.provider !== 'manual').map((c: Record<string, string>) => (
+          <Badge key={c.id} tone={c.status === 'connected' ? 'good' : 'warn'}>{c.display_name} · synced {relTime(c.last_success_at)}</Badge>
         ))}
       </div>
-      <Card className="overflow-x-auto p-0 sm:p-0">
-        <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="border-b border-line bg-[#fafaf8] text-xs font-medium text-muted">
-            <tr><th className="p-3">Course</th><th className="p-3">{cd.scope.current?.name ?? 'Current'} · official</th><th className="p-3">{cd.scope.current?.name ?? 'Current'} · platform</th>
-              <th className="p-3">Semester</th><th className="p-3">Last report card</th><th className="p-3">Trend</th></tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {rows.map((r) => (
-              <tr key={r.course.id} className="align-top">
-                <td className="p-3"><div className="flex items-start gap-2.5"><span aria-hidden className="mt-1.5 h-2 w-2 flex-none rounded-full" style={{ background: courseColor(r.course.name) }} /><div><div className="font-medium">{r.course.name}</div><div className="text-xs text-muted">{r.teacher ?? 'Teacher unknown'}</div>
-                  {!r.hasAnyGrade && <Badge tone="muted">No grades posted yet</Badge>}</div></div></td>
-                <td className="p-3"><Cell c={r.officialQuarter} tz={tz} /></td>
-                <td className="p-3"><Cell c={r.platformQuarter} tz={tz} /></td>
-                <td className="p-3"><Cell c={r.semester} tz={tz} /></td>
-                <td className="p-3"><Cell c={r.lastReportCard} tz={tz} /></td>
-                <td className="p-3">
-                  <Sparkline points={r.trendPoints} />
-                  {r.trend != null ? <div className={`nums text-xs ${r.trend >= 0 ? 'text-good' : 'text-warn'}`}>{r.trend >= 0 ? '+' : ''}{r.trend.toFixed(1)}</div>
-                    : <div className="text-xs text-muted">Not enough data</div>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+      {!hasReportCards && (
+        <div className="rounded-xl border border-dashed border-line p-3 text-sm text-muted">
+          Official report-card grades come from Skyward, which isn&apos;t connected yet. <Link className="underline" href="/settings/connections">Import from Skyward</Link>
+        </div>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {rows.map((r) => {
+          const color = courseColor(r.name);
+          const letter = letterFor(r.canvasNow);
+          return (
+            <Link key={r.id} href={`/child/${id}/course/${r.id}`} className="notebook-card block p-4 transition hover:shadow-md">
+              <div className="flex items-start gap-3">
+                <span aria-hidden className="mt-1.5 h-2.5 w-2.5 flex-none rounded-full" style={{ background: color }} />
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold leading-snug">{shortCourse(r.name)}</div>
+                  <div className="truncate text-xs text-muted">{r.teacher ?? 'Teacher unknown'}</div>
+                </div>
+                <div className="text-right">
+                  <div className="nums text-2xl font-bold leading-none">{r.canvasNow != null ? `${Math.round(r.canvasNow)}%` : '—'}</div>
+                  <div className="text-xs text-muted">{letter ? `${letter} · ` : ''}Canvas now</div>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Quarter q={r.current} label="This quarter" />
+                <Quarter q={r.previous} label="Last quarter" />
+              </div>
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }
