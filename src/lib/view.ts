@@ -177,3 +177,31 @@ export function lastQuarterSummary(cd: ChildData, previous: Assignment[], now = 
   }).filter((c) => c.pct != null || c.missing || c.reportCard != null);
   return { name: p.name, startsOn: p.startsOn, endsOn: p.endsOn, items, missing, graded: graded.length, courses };
 }
+
+export interface QuarterStat { name: string; pct: number | null; graded: number; missing: number; reportCard: number | null; reportLetter: string | null }
+export interface CourseOverview {
+  id: string; name: string; teacher: string | null;
+  canvasNow: number | null; canvasAt: Date | null;
+  current: QuarterStat | null; previous: QuarterStat | null;
+}
+
+/** One row per course from data we actually have: Canvas running grade, per-quarter graded work, report cards when imported. */
+export function courseOverview(cd: ChildData, now = new Date()): CourseOverview[] {
+  const cur = cd.scope.current, prev = previousQuarter(cd.periods, cur);
+  const stat = (p: typeof cur, courseId: string): QuarterStat | null => {
+    if (!p) return null;
+    const items = cd.assignments.filter((a) => a.courseId === courseId && a.periodId === p.id && !cd.scope.excluded.has(a.id));
+    const graded = items.filter((a) => a.score != null && a.pointsPossible);
+    const pts = graded.reduce((t, a) => t + (a.score ?? 0), 0), poss = graded.reduce((t, a) => t + (a.pointsPossible ?? 0), 0);
+    const missing = items.filter((a) => ['missing', 'overdue'].includes(classify(a, now))).length;
+    const rc = cd.grades.find((g: Row) => g.course_id === courseId && g.period_id === p.id && g.source_type === 'official' && g.percent != null);
+    return { name: p.name, pct: poss ? pts / poss : null, graded: graded.length, missing,
+      reportCard: rc ? Number(rc.percent) : null, reportLetter: rc?.letter ?? null };
+  };
+  return cd.courses.map((c: Row) => ({
+    id: c.id, name: c.name, teacher: c.teacher ?? null,
+    canvasNow: c.current_score == null ? null : Number(c.current_score),
+    canvasAt: c.current_score_at ? new Date(c.current_score_at) : null,
+    current: stat(cur, c.id), previous: stat(prev, c.id),
+  })).sort((a, b) => (a.canvasNow ?? 999) - (b.canvasNow ?? 999));
+}
